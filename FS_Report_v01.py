@@ -47,6 +47,7 @@ df = load_data()
 
 month_options = sorted(df["YearMonth"].dropna().unique())
 
+
 # ===================================================
 # SANKEY BUILDER
 # ===================================================
@@ -73,19 +74,6 @@ def build_pl_sankey(pl_df):
             "Display Amount"
         ].sum()
 
-    revenue = section_sum("Revenues")
-    costs = section_sum("Costs")
-    expenses = section_sum("Expenses")
-    others = section_sum("Others")
-    oci = section_sum("OCI")
-
-    gross_profit = revenue + costs
-    operating_income = gross_profit + expenses
-    net_income = operating_income + others
-    comprehensive_income = net_income + oci
-
-    links = []
-
     def add_link(source, target, amount):
 
         if amount != 0:
@@ -96,37 +84,210 @@ def build_pl_sankey(pl_df):
                 "Amount": abs(amount)
             })
 
-    add_link("Salaries & bonuses", "Revenues", fsli_sum("Salaries & bonuses"))
-    add_link("Subsidies", "Revenues", fsli_sum("Subsidies"))
-    add_link("H-Fund Take", "Revenues", fsli_sum("H-Fund Take"))
+    # ---------------------------------------------------
+    # BASIC TOTALS
+    # ---------------------------------------------------
 
-    add_link("Revenues", "Food", fsli_sum("Food"))
-    add_link("Revenues", "Apartment rental costs", fsli_sum("Apartment rental costs"))
-    add_link("Revenues", "Utilities", fsli_sum("Utilities"))
-    add_link("Revenues", "Studies", fsli_sum("Studies"))
-    add_link("Revenues", "Healthcare", fsli_sum("Healthcare"))
-    add_link("Revenues", "Haircut & Clothes", fsli_sum("Haircut & Clothes"))
+    revenue = section_sum("Revenues")
+    costs = section_sum("Costs")
+    expenses = section_sum("Expenses")
 
-    add_link("Revenues", "Gross profit/(loss)", gross_profit)
+    gross_profit = revenue + costs
+    operating_income = gross_profit + expenses
 
-    add_link("Gross profit/(loss)", "Travel & Hotel", fsli_sum("Travel & Hotel"))
-    add_link("Gross profit/(loss)", "Social & Entertainment", fsli_sum("Social & Entertainment"))
-    add_link("Gross profit/(loss)", "Goods & Services", fsli_sum("Goods & Services"))
-    add_link("Gross profit/(loss)", "Family", fsli_sum("Family"))
+    # ---------------------------------------------------
+    # ITEM LISTS
+    # ---------------------------------------------------
 
-    add_link("Gross profit/(loss)", "Operating income/(loss)", operating_income)
+    revenue_items = [
+        "Salaries & bonuses",
+        "Subsidies",
+        "H-Fund Take"
+    ]
 
-    add_link("Operating income/(loss)", "FinExp - general", fsli_sum("FinExp - general"))
-    add_link("Operating income/(loss)", "FinExp - exchange", fsli_sum("FinExp - exchange"))
-    add_link("Operating income/(loss)", "FinExp - unrealised exchange", fsli_sum("FinExp - unrealised exchange"))
+    cost_items = [
+        "Food",
+        "Apartment rental costs",
+        "Utilities",
+        "Studies",
+        "Healthcare",
+        "Haircut & Clothes"
+    ]
 
-    add_link("Operating income/(loss)", "Net income/(loss)", net_income)
+    expense_items = [
+        "Travel & Hotel",
+        "Social & Entertainment",
+        "Goods & Services",
+        "Family"
+    ]
 
-    add_link("Investment income", "Net income/(loss)", fsli_sum("Investment income"))
-    add_link("H-Fund keep", "Comprehensive income/(loss)", fsli_sum("H-Fund keep"))
-    add_link("Medical insurance keep", "Comprehensive income/(loss)", fsli_sum("Medical insurance keep"))
+    other_net_items = [
+        "FinExp - general",
+        "FinExp - exchange",
+        "FinExp - unrealised exchange",
+        "Investment income"
+    ]
 
-    add_link("Net income/(loss)", "Comprehensive income/(loss)", comprehensive_income)
+    oci_items = [
+        "H-Fund keep",
+        "Medical insurance keep"
+    ]
+
+    # ---------------------------------------------------
+    # OTHER / OCI POSITIVE AND NEGATIVE PARTS
+    # ---------------------------------------------------
+
+    other_positive = 0
+    other_negative = 0
+
+    for item in other_net_items:
+
+        amount = fsli_sum(item)
+
+        if amount >= 0:
+            other_positive += amount
+        else:
+            other_negative += abs(amount)
+
+    net_income = (
+        operating_income
+        + other_positive
+        - other_negative
+    )
+
+    oci_positive = 0
+    oci_negative = 0
+
+    for item in oci_items:
+
+        amount = fsli_sum(item)
+
+        if amount >= 0:
+            oci_positive += amount
+        else:
+            oci_negative += abs(amount)
+
+    comprehensive_income = (
+        net_income
+        + oci_positive
+        - oci_negative
+    )
+
+    # ---------------------------------------------------
+    # LINKS
+    # ---------------------------------------------------
+
+    links = []
+
+    # ---------------------------------------------------
+    # REVENUES → REVENUES NODE
+    # ---------------------------------------------------
+
+    for item in revenue_items:
+
+        add_link(
+            item,
+            "Revenues",
+            fsli_sum(item)
+        )
+
+    # ---------------------------------------------------
+    # REVENUES → COSTS / GROSS PROFIT
+    # ---------------------------------------------------
+
+    for item in cost_items:
+
+        add_link(
+            "Revenues",
+            item,
+            fsli_sum(item)
+        )
+
+    add_link(
+        "Revenues",
+        "Gross profit/(loss)",
+        gross_profit
+    )
+
+    # ---------------------------------------------------
+    # GROSS PROFIT → EXPENSES / OPERATING INCOME
+    # ---------------------------------------------------
+
+    for item in expense_items:
+
+        add_link(
+            "Gross profit/(loss)",
+            item,
+            fsli_sum(item)
+        )
+
+    add_link(
+        "Gross profit/(loss)",
+        "Operating income/(loss)",
+        operating_income
+    )
+
+    # ---------------------------------------------------
+    # OPERATING INCOME → OTHER EXPENSES / NET INCOME
+    # OTHER INCOME → NET INCOME
+    # ---------------------------------------------------
+
+    for item in other_net_items:
+
+        amount = fsli_sum(item)
+
+        if amount >= 0:
+
+            add_link(
+                item,
+                "Net income/(loss)",
+                amount
+            )
+
+        else:
+
+            add_link(
+                "Operating income/(loss)",
+                item,
+                amount
+            )
+
+    add_link(
+        "Operating income/(loss)",
+        "Net income/(loss)",
+        operating_income - other_negative
+    )
+
+    # ---------------------------------------------------
+    # NET INCOME → OCI LOSSES / COMPREHENSIVE INCOME
+    # OCI INCOME → COMPREHENSIVE INCOME
+    # ---------------------------------------------------
+
+    for item in oci_items:
+
+        amount = fsli_sum(item)
+
+        if amount >= 0:
+
+            add_link(
+                item,
+                "Comprehensive income/(loss)",
+                amount
+            )
+
+        else:
+
+            add_link(
+                "Net income/(loss)",
+                item,
+                amount
+            )
+
+    add_link(
+        "Net income/(loss)",
+        "Comprehensive income/(loss)",
+        net_income - oci_negative
+    )
 
     sankey_df = pd.DataFrame(links)
 
