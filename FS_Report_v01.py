@@ -1487,6 +1487,121 @@ else:
             for i, label in enumerate(labels)
         }
 
+        # ---------------------------------------------------
+        # LINK COLORS
+        # ---------------------------------------------------
+
+        link_colors = []
+
+        for _, row in sankey_df.iterrows():
+
+            source = row["Source"]
+            target = row["Target"]
+
+            # -----------------------------------
+            # REVENUES
+            # -----------------------------------
+
+            if (
+
+                source in [
+                    "Salaries & bonuses",
+                    "Subsidies",
+                    "H-Fund Take"
+                ]
+
+                or
+
+                target == "Revenues"
+
+            ):
+
+                link_colors.append(
+                    "rgba(153,255,255,0.50)"
+                )
+
+            # -----------------------------------
+            # COSTS
+            # -----------------------------------
+
+            elif source == "Revenues":
+
+                link_colors.append(
+                    "rgba(153,204,255,0.50)"
+                )
+
+            # -----------------------------------
+            # EXPENSES
+            # -----------------------------------
+
+            elif source == "Gross profit/(loss)":
+
+                link_colors.append(
+                    "rgba(255,102,102,0.50)"
+                )
+
+            # -----------------------------------
+            # OTHERS
+            # -----------------------------------
+
+            elif (
+
+                "FinExp" in source
+
+                or
+
+                "Investment income" in source
+
+                or
+
+                "FinExp" in target
+
+                or
+
+                "Investment income" in target
+
+            ):
+
+                link_colors.append(
+                    "rgba(153,204,255,0.50)"
+                )
+
+            # -----------------------------------
+            # OCI
+            # -----------------------------------
+
+            elif (
+
+                "H-Fund keep" in source
+
+                or
+
+                "Medical insurance keep" in source
+
+                or
+
+                "H-Fund keep" in target
+
+                or
+
+                "Medical insurance keep" in target
+
+            ):
+
+                link_colors.append(
+                    "rgba(153,255,255,0.50)"
+                )
+
+            # -----------------------------------
+            # DEFAULT
+            # -----------------------------------
+
+            else:
+
+                link_colors.append(
+                    "rgba(153,255,255,0.35)"
+                )
+
         sankey_fig = go.Figure(
             data=[
                 go.Sankey(
@@ -1503,7 +1618,8 @@ else:
                     link=dict(
                         source=sankey_df["Source"].map(label_map),
                         target=sankey_df["Target"].map(label_map),
-                        value=sankey_df["Amount"]
+                        value=sankey_df["Amount"],
+                        color=link_colors
                     )
                 )
             ]
