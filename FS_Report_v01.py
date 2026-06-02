@@ -192,13 +192,19 @@ def build_pl_sankey(pl_df):
         )
 
     # ---------------------------------------------------
-    # REVENUES → COSTS / GROSS PROFIT
+    # REVENUES → COSTS → COST ITEMS / GROSS PROFIT
     # ---------------------------------------------------
+
+    add_link(
+        "Revenues",
+        "Costs",
+        costs
+    )
 
     for item in cost_items:
 
         add_link(
-            "Revenues",
+            "Costs",
             item,
             fsli_sum(item)
         )
@@ -210,13 +216,19 @@ def build_pl_sankey(pl_df):
     )
 
     # ---------------------------------------------------
-    # GROSS PROFIT → EXPENSES / OPERATING INCOME
+    # GROSS PROFIT → EXPENSES → EXPENSE ITEMS / OPERATING INCOME
     # ---------------------------------------------------
+
+    add_link(
+        "Gross profit/(loss)",
+        "Expenses",
+        expenses
+    )
 
     for item in expense_items:
 
         add_link(
-            "Gross profit/(loss)",
+            "Expenses",
             item,
             fsli_sum(item)
         )
@@ -292,6 +304,236 @@ def build_pl_sankey(pl_df):
     sankey_df = pd.DataFrame(links)
 
     return sankey_df
+
+# ===================================================
+# CASH FLOW SANKEY BUILDER
+# ===================================================
+
+def build_cf_sankey(df, start_date, end_date):
+
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+
+    cash_fsli = [
+        "Cash at bank",
+        "Monetary fund"
+    ]
+
+    cf_tier_1_col = "CF Sankey A"
+    cf_tier_2_col = "CF Sankey B"
+
+    opening_df = df[
+        (df["Date"] < start_date) &
+        (df["FSLI"].isin(cash_fsli))
+    ]
+
+    opening_savings = opening_df["RMB Amount"].sum()
+
+    period_df = df[
+        (df["Date"] >= start_date) &
+        (df["Date"] <= end_date) &
+        (df["FSLI"].isin(cash_fsli)) &
+        (df[cf_tier_1_col].notna())
+    ].copy()
+
+    links = []
+
+    def add_link(source, target, amount):
+
+        if amount != 0:
+
+            links.append({
+                "Source": source,
+                "Target": target,
+                "Amount": abs(amount)
+            })
+
+    # ---------------------------------------------------
+    # PERIOD CASH FLOW TOTALS
+    # ---------------------------------------------------
+
+    operating_cf = period_df.loc[
+        period_df[cf_tier_1_col] == "Operating cash flow",
+        "RMB Amount"
+    ].sum()
+
+    investing_cf = period_df.loc[
+        period_df[cf_tier_1_col] == "Investing activities",
+        "RMB Amount"
+    ].sum()
+
+    financing_cf = period_df.loc[
+        period_df[cf_tier_1_col] == "Financing activities",
+        "RMB Amount"
+    ].sum()
+
+    fx_effect = period_df.loc[
+        period_df[cf_tier_1_col] == "Effect of foreign currency exchange on cash",
+        "RMB Amount"
+    ].sum()
+
+    current_period_cash_change = (
+        operating_cf
+        + investing_cf
+        + financing_cf
+        + fx_effect
+    )
+
+    ending_savings = (
+        opening_savings
+        + current_period_cash_change
+    )
+
+    # ---------------------------------------------------
+    # OPERATING CASH FLOW
+    # ---------------------------------------------------
+
+    if operating_cf >= 0:
+
+        add_link(
+            "Operating cash flow",
+            "Current pool",
+            operating_cf
+        )
+
+    else:
+
+        add_link(
+            "Current pool",
+            "Operating cash flow",
+            operating_cf
+        )
+
+    # ---------------------------------------------------
+    # INVESTING / FINANCING ACTIVITIES
+    # ---------------------------------------------------
+
+    for tier1 in [
+        "Investing activities",
+        "Financing activities"
+    ]:
+
+        tier1_df = period_df[
+            period_df[cf_tier_1_col] == tier1
+        ]
+
+        tier1_total = tier1_df["RMB Amount"].sum()
+
+        if tier1_total >= 0:
+
+            add_link(
+                tier1,
+                "Current pool",
+                tier1_total
+            )
+
+        else:
+
+            add_link(
+                "Current pool",
+                tier1,
+                tier1_total
+            )
+
+        tier2_summary = (
+            tier1_df
+            .groupby(cf_tier_2_col)["RMB Amount"]
+            .sum()
+            .reset_index()
+        )
+
+        for _, row in tier2_summary.iterrows():
+
+            tier2 = row[cf_tier_2_col]
+            amount = row["RMB Amount"]
+
+            if pd.isna(tier2):
+                continue
+
+            if amount >= 0:
+
+                add_link(
+                    tier2,
+                    tier1,
+                    amount
+                )
+
+            else:
+
+                add_link(
+                    tier1,
+                    tier2,
+                    amount
+                )
+
+    # ---------------------------------------------------
+    # FX EFFECT
+    # ---------------------------------------------------
+
+    if fx_effect >= 0:
+
+        add_link(
+            "Effect of foreign currency exchange on cash",
+            "Current pool",
+            fx_effect
+        )
+
+    else:
+
+        add_link(
+            "Current pool",
+            "Effect of foreign currency exchange on cash",
+            fx_effect
+        )
+
+    # ---------------------------------------------------
+    # SAVINGS FROM PRIOR PERIODS / ENDING SAVINGS
+    # ---------------------------------------------------
+
+    if current_period_cash_change < 0:
+
+        # Current period consumed cash, so prior savings fund the shortfall
+        add_link(
+            "Savings from prior periods",
+            "Current pool",
+            abs(current_period_cash_change)
+        )
+
+        # Residual opening savings goes to ending savings
+        residual_prior_savings = (
+            opening_savings
+            + current_period_cash_change
+        )
+
+        if residual_prior_savings > 0:
+
+            add_link(
+                "Savings from prior periods",
+                "Savings at the end of the period",
+                residual_prior_savings
+            )
+
+    else:
+
+        # Current period generated positive cash.
+        # Opening savings and current pool both contribute to ending savings.
+        if opening_savings > 0:
+
+            add_link(
+                "Savings from prior periods",
+                "Savings at the end of the period",
+                opening_savings
+            )
+
+        add_link(
+            "Current pool",
+            "Savings at the end of the period",
+            current_period_cash_change
+        )
+
+    return pd.DataFrame(links)
+
+
 
 # ===================================================
 # SIDEBAR NAVIGATION
@@ -1524,20 +1766,30 @@ else:
             # COSTS
             # -----------------------------------
 
-            elif source == "Revenues":
+            elif source == "Costs":
 
                 link_colors.append(
-                    "rgba(153,204,255,0.50)"
+                    "rgba(204,153,255,0.50)"
+                )
+            elif target == "Costs":
+
+                link_colors.append(
+                    "rgba(204,153,255,0.50)"
                 )
 
             # -----------------------------------
             # EXPENSES
             # -----------------------------------
 
-            elif source == "Gross profit/(loss)":
+            elif source == "Expenses":
 
                 link_colors.append(
-                    "rgba(255,102,102,0.50)"
+                    "rgba(255,153,204,0.50)"
+                )
+            elif target == "Expenses":
+
+                link_colors.append(
+                    "rgba(255,153,204,0.50)"
                 )
 
             # -----------------------------------
@@ -1637,7 +1889,7 @@ else:
             key="standalone_sankey_chart"
         )
 
-        st.subheader("Sankey Source Data")
+        st.subheader("PL Flow Sankey Source Data")
 
         sankey_display_df = sankey_df.copy()
 
@@ -1658,3 +1910,119 @@ else:
             "No Sankey data available for the selected period."
         )
 
+
+# ===================================================
+# CASH FLOW SANKEY
+# ===================================================
+
+    st.subheader("Cash Flow Sankey")
+
+    cf_sankey_df = build_cf_sankey(
+        df,
+        sankey_start_date,
+        sankey_end_date
+    )
+
+    if not cf_sankey_df.empty:
+
+        cf_labels = pd.unique(
+            cf_sankey_df[["Source", "Target"]].values.ravel()
+        ).tolist()
+
+        cf_label_map = {
+            label: i
+            for i, label in enumerate(cf_labels)
+        }
+
+        cf_link_colors = []
+
+        for _, row in cf_sankey_df.iterrows():
+
+            source = row["Source"]
+            target = row["Target"]
+
+            if "Operating cash flow" in [source, target]:
+
+                cf_link_colors.append(
+                    "rgba(153,255,255,0.50)"
+                )
+
+            elif "Investing activities" in [source, target]:
+
+                cf_link_colors.append(
+                    "rgba(204,153,255,0.50)"
+                )
+
+            elif "Financing activities" in [source, target]:
+
+                cf_link_colors.append(
+                    "rgba(153,204,255,0.50)"
+                )
+
+            elif "Savings from prior periods" in [source, target]:
+
+                cf_link_colors.append(
+                    "rgba(200,200,200,0.45)"
+                )
+
+            else:
+
+                cf_link_colors.append(
+                    "rgba(180,180,180,0.35)"
+                )
+
+        cf_fig = go.Figure(
+            data=[
+                go.Sankey(
+                    node=dict(
+                        pad=20,
+                        thickness=18,
+                        line=dict(
+                            color="black",
+                            width=0.5
+                        ),
+                        label=cf_labels,
+                        color="rgb(153,255,255)"
+                    ),
+                    link=dict(
+                        source=cf_sankey_df["Source"].map(cf_label_map),
+                        target=cf_sankey_df["Target"].map(cf_label_map),
+                        value=cf_sankey_df["Amount"],
+                        color=cf_link_colors
+                    )
+                )
+            ]
+        )
+
+        cf_fig.update_layout(
+            title_text="Cash Flow Sankey",
+            font_size=12,
+            height=650
+        )
+
+        st.plotly_chart(
+            cf_fig,
+            use_container_width=True,
+            key="cash_flow_sankey_chart"
+        )
+
+        st.subheader("Cash Flow Sankey Source Data")
+
+        cf_display_df = cf_sankey_df.copy()
+
+        cf_display_df["Amount"] = (
+            cf_display_df["Amount"]
+            .map(acct_format)
+        )
+
+        st.dataframe(
+            cf_display_df,
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.info(
+            "No Cash Flow Sankey data available for the selected period."
+        )
