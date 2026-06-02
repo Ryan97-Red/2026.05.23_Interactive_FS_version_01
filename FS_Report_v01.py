@@ -1716,7 +1716,7 @@ else:
         )
         st.stop()
 
-    st.subheader("PL Flow Sankey")
+    st.subheader("Statement of Comprehensive Income Sankey")
 
     if not sankey_df.empty:
 
@@ -1878,7 +1878,7 @@ else:
         )
 
         sankey_fig.update_layout(
-            title_text="Statement of Comprehensive Income Flow",
+            title_text="Ryan's Statement of Comprehensive Income Sankey Diagram for the selected period",
             font_size=12,
             height=750
         )
@@ -1889,7 +1889,7 @@ else:
             key="standalone_sankey_chart"
         )
 
-        st.subheader("PL Flow Sankey Source Data")
+        st.subheader("Statement of Comprehensive Income Sankey Source Data")
 
         sankey_display_df = sankey_df.copy()
 
@@ -1995,7 +1995,7 @@ else:
         )
 
         cf_fig.update_layout(
-            title_text="Cash Flow Sankey",
+            title_text="Ryan's Cash Flow Sankey Diagram for the selected period",
             font_size=12,
             height=650
         )
