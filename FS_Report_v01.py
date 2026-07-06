@@ -118,7 +118,7 @@ def build_pl_sankey(pl_df):
         "Travel & Hotel",
         "Social & Entertainment",
         "Goods & Services",
-        "Family"
+        "FML"
     ]
 
     other_net_items = [
